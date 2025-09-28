@@ -179,23 +179,50 @@ class ChatAPITester:
             async with websockets.connect(WS_URL) as websocket:
                 self.log_test("WebSocket Connection", True, "Successfully connected to WebSocket")
                 
+                # First, create a message via API to trigger WebSocket broadcast
+                test_message = {
+                    "platform": "youtube",
+                    "username": "WebSocketTestUser",
+                    "message": "Testing WebSocket broadcast",
+                    "user_color": "#00FF00",
+                    "is_moderator": False,
+                    "is_subscriber": True
+                }
+                
+                # Create message via API (this should trigger WebSocket broadcast)
+                try:
+                    response = self.session.post(f"{API_BASE}/messages", json=test_message, timeout=5)
+                    if response.status_code == 200:
+                        print("  Created test message via API to trigger WebSocket broadcast")
+                    else:
+                        print(f"  Failed to create test message: {response.status_code}")
+                except Exception as e:
+                    print(f"  Error creating test message: {e}")
+                
                 # Wait for chat messages (may receive other message types first)
                 chat_message_received = False
                 attempts = 0
-                max_attempts = 5
+                max_attempts = 8
                 
                 try:
                     while not chat_message_received and attempts < max_attempts:
-                        message = await asyncio.wait_for(websocket.recv(), timeout=10)
+                        message = await asyncio.wait_for(websocket.recv(), timeout=8)
                         data = json.loads(message)
                         attempts += 1
                         
                         if data.get("type") == "new_message" and "data" in data:
-                            self.log_test("WebSocket Message Receive", True, 
-                                        "Received real-time chat message broadcast", data)
-                            chat_message_received = True
-                        elif data.get("type") == "hot":
-                            # This appears to be a heartbeat/status message, continue waiting
+                            # Verify it's our test message or a mock message
+                            msg_data = data["data"]
+                            if ("username" in msg_data and "message" in msg_data and "platform" in msg_data):
+                                self.log_test("WebSocket Message Receive", True, 
+                                            f"Received chat message: {msg_data['username']}: {msg_data['message']}", data)
+                                chat_message_received = True
+                            else:
+                                self.log_test("WebSocket Message Receive", False, 
+                                            f"Chat message missing required fields: {msg_data}")
+                                chat_message_received = True
+                        elif data.get("type") in ["hot", "liveReload", "reconnect", "overlay", "hash"]:
+                            # These are development server messages, continue waiting
                             continue
                         else:
                             # Log other message types but continue waiting
@@ -203,11 +230,11 @@ class ChatAPITester:
                     
                     if not chat_message_received:
                         self.log_test("WebSocket Message Receive", False, 
-                                    f"No chat messages received after {attempts} attempts. Last message: {data}")
+                                    f"No chat messages received after {attempts} attempts. This may indicate WebSocket is connecting to dev server instead of chat endpoint")
                         
                 except asyncio.TimeoutError:
                     self.log_test("WebSocket Message Receive", False, 
-                                "Timeout waiting for messages (mock generation may be slow or disabled)")
+                                "Timeout waiting for messages. Mock generation may be disabled or WebSocket endpoint incorrect")
                 
         except Exception as e:
             self.log_test("WebSocket Connection", False, f"WebSocket connection failed: {str(e)}")
