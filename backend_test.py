@@ -193,7 +193,7 @@ class ChatAPITester:
                                         f"Unexpected message type: {data['type']}", data)
                     else:
                         self.log_test("WebSocket Message Receive", False, 
-                                    "Message missing required fields", data)
+                                    f"Message missing required fields. Received: {data}", data)
                         
                 except asyncio.TimeoutError:
                     self.log_test("WebSocket Message Receive", False, 
