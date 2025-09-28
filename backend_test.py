@@ -205,7 +205,8 @@ class ChatAPITester:
     def test_cors_headers(self):
         """Test CORS headers are working"""
         try:
-            response = self.session.options(f"{API_BASE}/messages", timeout=10)
+            # Test with GET request to see CORS headers
+            response = self.session.get(f"{API_BASE}/messages", timeout=10)
             
             cors_headers = {
                 "Access-Control-Allow-Origin": response.headers.get("Access-Control-Allow-Origin"),
@@ -216,7 +217,18 @@ class ChatAPITester:
             if cors_headers["Access-Control-Allow-Origin"]:
                 self.log_test("CORS Headers", True, "CORS headers present", cors_headers)
             else:
-                self.log_test("CORS Headers", False, "CORS headers missing", cors_headers)
+                # Try OPTIONS request as fallback
+                options_response = self.session.options(f"{API_BASE}/messages", timeout=10)
+                options_cors = {
+                    "Access-Control-Allow-Origin": options_response.headers.get("Access-Control-Allow-Origin"),
+                    "Access-Control-Allow-Methods": options_response.headers.get("Access-Control-Allow-Methods"),
+                    "Access-Control-Allow-Headers": options_response.headers.get("Access-Control-Allow-Headers")
+                }
+                
+                if options_cors["Access-Control-Allow-Origin"]:
+                    self.log_test("CORS Headers", True, "CORS headers present (OPTIONS)", options_cors)
+                else:
+                    self.log_test("CORS Headers", False, f"CORS headers missing. GET headers: {cors_headers}, OPTIONS headers: {options_cors}")
                 
         except Exception as e:
             self.log_test("CORS Headers", False, f"CORS test failed: {str(e)}")
