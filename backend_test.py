@@ -230,7 +230,7 @@ class ChatAPITester:
                     
                     if not chat_message_received:
                         self.log_test("WebSocket Message Receive", False, 
-                                    f"No chat messages received after {attempts} attempts. This may indicate WebSocket is connecting to dev server instead of chat endpoint")
+                                    f"No chat messages received after {attempts} attempts. WebSocket connects but may be routing to wrong endpoint. Mock generation is working (verified via API).")
                         
                 except asyncio.TimeoutError:
                     self.log_test("WebSocket Message Receive", False, 
