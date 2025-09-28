@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Multi-Platform Chat Aggregator</title>
+    <meta name="description" content="YouTube, Twitch, Kick platformları için gerçek zamanlı chat aggregator">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.4.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #123a49;
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+      .loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        color: #2da592;
+        font-size: 1.2em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="loading">
+        <i class="ri-loader-4-line ri-spin"></i>
+        <span style="margin-left: 10px;">Chat Aggregator Yükleniyor...</span>
+      </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
