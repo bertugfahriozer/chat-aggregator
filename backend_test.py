@@ -176,7 +176,7 @@ class ChatAPITester:
         """Test WebSocket /ws - Test WebSocket connection and message broadcasting"""
         try:
             # Test WebSocket connection
-            async with websockets.connect(WS_URL, timeout=10) as websocket:
+            async with websockets.connect(WS_URL) as websocket:
                 self.log_test("WebSocket Connection", True, "Successfully connected to WebSocket")
                 
                 # Wait for a message (should receive mock messages)
