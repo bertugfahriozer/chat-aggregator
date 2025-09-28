@@ -196,3 +196,5 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: "MVP chat aggregation app completed with mock data. WebSocket real-time updates, platform filtering, and MongoDB storage all working. Ready for backend API testing before moving to real platform integrations."
+    - agent: "testing"
+      message: "Backend API testing completed. Core functionality working: CRUD operations, platform filtering, MongoDB storage, mock generation. Minor issues: CORS headers not visible (likely ingress config), WebSocket connects but may have routing issue preventing chat message broadcasts."
