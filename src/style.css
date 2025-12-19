@@ -1,29 +1,69 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 :root {
-  --bg-primary: #f5faf6;
-  --bg-secondary: #8bcbb7;
-  --text-primary: #123a49;
-  --text-secondary: #4a4a4a;
-  --text-muted: #6b7280;
-  --accent-color: #2da592;
-  --accent-hover: #248f7d;
-  --accent-shadow: rgba(45, 165, 146, 0.2);
-  --border-color: #d1d5db;
-  --icon-color: #123a49;
+  --font-ui: "Vandav", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Pirulen", "Vandav", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --bg-primary: #f8f5ff;
+  --bg-secondary: #efe7ff;
+  --text-primary: #1a0b2e;
+  --text-secondary: #3b2b52;
+  --text-muted: #6b5b86;
+  --accent-color: #ff7a18;
+  --accent-hover: #ff933d;
+  --accent-shadow: rgba(255, 122, 24, 0.35);
+  --border-color: rgba(26, 11, 46, 0.16);
+  --icon-color: #1a0b2e;
+  --neon-purple: #b100ff;
+  --neon-cyan: #00f5ff;
+  --radius-xl: 18px;
+  --radius-lg: 14px;
+  --radius-md: 12px;
+  --radius-sm: 10px;
+  --glass-bg: rgba(255, 255, 255, 0.65);
+  --glass-bg-strong: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(26, 11, 46, 0.18);
+  --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.12);
+  --shadow-strong: 0 22px 70px rgba(0, 0, 0, 0.24);
+  --focus-ring: 0 0 0 2px rgba(255, 122, 24, 0.24), 0 0 0 6px rgba(177, 0, 255, 0.12);
+}
+
+@font-face {
+  font-family: "Pirulen";
+  src:
+    local("Pirulen"),
+    url("/fonts/PirulenRg.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Vandav";
+  src:
+    local("Vandav"),
+    url("/fonts/Vandav.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
 }
 
 [data-theme='dark'] {
-  --bg-primary: #123a49;
-  --bg-secondary: #2da592;
-  --text-primary: #f5faf6;
-  --text-secondary: #8bcbb7;
-  --text-muted: #9ca3af;
-  --accent-color: #2da592;
-  --accent-hover: #3cb7a1;
-  --accent-shadow: rgba(45, 165, 146, 0.2);
-  --border-color: #4b5563;
-  --icon-color: #f5faf6;
+  --bg-primary: #07020f;
+  --bg-secondary: #120624;
+  --text-primary: #f6efff;
+  --text-secondary: #d7ccff;
+  --text-muted: #ad9fd6;
+  --accent-color: #ff7a18;
+  --accent-hover: #ff933d;
+  --accent-shadow: rgba(255, 122, 24, 0.35);
+  --border-color: rgba(177, 0, 255, 0.35);
+  --icon-color: #f6efff;
+  --neon-purple: #b100ff;
+  --neon-cyan: #00f5ff;
+  --glass-bg: rgba(18, 6, 36, 0.62);
+  --glass-bg-strong: rgba(18, 6, 36, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --shadow-soft: 0 14px 34px rgba(0, 0, 0, 0.35);
+  --shadow-strong: 0 26px 80px rgba(0, 0, 0, 0.55);
+  --focus-ring: 0 0 0 2px rgba(255, 122, 24, 0.22), 0 0 0 6px rgba(177, 0, 255, 0.18);
 }
 
 * {
@@ -32,8 +72,62 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background: var(--bg-primary);
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(900px circle at 20% 0%, rgba(177, 0, 255, 0.22), transparent 56%),
+    radial-gradient(900px circle at 80% 0%, rgba(255, 122, 24, 0.20), transparent 56%),
+    radial-gradient(1100px circle at 50% 120%, rgba(0, 245, 255, 0.10), transparent 60%),
+    var(--bg-primary);
   color: var(--text-primary);
+  padding: clamp(6px, 1.2vw, 12px);
+  overflow: hidden;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.08;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.06) 0px,
+      rgba(255, 255, 255, 0.06) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.045) 0px,
+      rgba(255, 255, 255, 0.045) 1px,
+      transparent 1px,
+      transparent 6px
+    );
+  mix-blend-mode: overlay;
+}
+
+::selection {
+  background: rgba(255, 122, 24, 0.28);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

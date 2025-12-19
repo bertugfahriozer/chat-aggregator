@@ -3,7 +3,9 @@ import { v4 as uuidv4 } from "uuid";
 import { createStore } from "vuex";
 import KickService from "../services/kickService";
 import TwitchService from "../services/twitchService";
+import TwitchEventProxyService from "../services/twitchEventProxyService";
 import YoutubeService from "../services/youtubeService";
+import YoutubeProxyService from "../services/youtubeProxyService";
 
 async function getLiveChatId(videoId, apiKey) {
   try {
@@ -52,11 +54,15 @@ export default createStore({
       twitchChannel: "",
       youtubeLiveId: "",
       kickChannel: "",
+      twitchEventsEnabled: false,
+      twitchClientId: "",
+      twitchSystemName: "CHAOSFOUNDRY // SYS",
     },
     services: {
       twitch: null,
       youtube: null,
       kick: null,
+      twitchEvents: null,
     },
     messageIds: new Set(),
     maxMessages: 100,
@@ -96,16 +102,29 @@ export default createStore({
           )
         : null;
 
+      const twitchEvents = settings.twitchEventsEnabled
+        ? new TwitchEventProxyService(
+            { systemName: settings.twitchSystemName },
+            (message) => commit("addMessage", { ...message, platform: "system" })
+          )
+        : null;
+
       let youtube = null;
       if (settings.youtubeLiveId) {
         const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
-        const liveChatId = await getLiveChatId(settings.youtubeLiveId, apiKey);
-        if (liveChatId) {
-          youtube = new YoutubeService(liveChatId, (message) =>
+        if (apiKey) {
+          const liveChatId = await getLiveChatId(settings.youtubeLiveId, apiKey);
+          if (liveChatId) {
+            youtube = new YoutubeService(liveChatId, (message) =>
+              commit("addMessage", { ...message, platform: "youtube" })
+            );
+          } else {
+            console.error("Failed to retrieve valid liveChatId.");
+          }
+        } else {
+          youtube = new YoutubeProxyService(settings.youtubeLiveId, (message) =>
             commit("addMessage", { ...message, platform: "youtube" })
           );
-        } else {
-          console.error("Failed to retrieve valid liveChatId.");
         }
       }
 
@@ -122,6 +141,7 @@ export default createStore({
       }
 
       twitch?.start();
+      twitchEvents?.start();
       youtube?.start();
       kick?.start();
 
@@ -129,6 +149,7 @@ export default createStore({
       commit("setService", { platform: "twitch", service: twitch });
       commit("setService", { platform: "youtube", service: youtube });
       commit("setService", { platform: "kick", service: kick });
+      commit("setService", { platform: "twitchEvents", service: twitchEvents });
     },
   },
 });
