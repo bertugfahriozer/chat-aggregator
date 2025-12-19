@@ -216,7 +216,7 @@ export default {
         })
       );
 
-      const scopes = ['channel:read:redemptions'];
+      const scopes = ['channel:read:redemptions', 'channel:read:raids'];
       const authorize = new URL('https://id.twitch.tv/oauth2/authorize');
       authorize.searchParams.set('response_type', 'code');
       authorize.searchParams.set('client_id', clientId);

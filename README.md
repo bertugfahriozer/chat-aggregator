@@ -90,6 +90,7 @@ This project can also show Twitch “events” (not chat) like channel point red
    This runs the server + Vite on HTTPS (Twitch requires HTTPS redirect URLs). You may need to accept the browser’s local certificate warning once.
 2. Create a Twitch Developer app and copy its **Client ID**.
    - If Twitch requires a **Client Secret** for your app type, you can paste it in Settings during authentication (it’s only used for the token exchange, then discarded from the browser storage).
+   - Scopes used: `channel:read:redemptions` (channel points) and `channel:read:raids` (raids).
 3. Add this redirect URL to the app:
    - `https://localhost:5173/auth/twitch`
 4. In the app Settings, enable **Twitch Events**, paste Client ID, and click **Authenticate**.
