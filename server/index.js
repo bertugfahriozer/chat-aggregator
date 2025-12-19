@@ -1,10 +1,9 @@
 import http from "node:http";
 import fs from "node:fs/promises";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { LiveChat } from "youtube-chat";
 
 const port = Number(process.env.YOUTUBE_PROXY_PORT || process.env.PORT || 4174);
-const oauthBaseUrl = `http://localhost:${port}`;
 const twitchAuthFileUrl = new URL("./.twitch-auth.json", import.meta.url);
 
 function json(data) {
@@ -41,18 +40,6 @@ async function readJsonBody(req, maxBytes = 200_000) {
   const raw = Buffer.concat(chunks).toString("utf8");
   if (!raw) return null;
   return JSON.parse(raw);
-}
-
-function base64Url(buffer) {
-  return Buffer.from(buffer)
-    .toString("base64")
-    .replaceAll("+", "-")
-    .replaceAll("/", "_")
-    .replaceAll("=", "");
-}
-
-function sha256Base64Url(input) {
-  return base64Url(createHash("sha256").update(input).digest());
 }
 
 async function readJsonFile(url) {
@@ -391,7 +378,6 @@ class TwitchEventSub {
 class TwitchManager {
   constructor() {
     this.clients = new Set();
-    this.pendingStates = new Map(); // state -> { verifier, clientId, scopes, createdAt }
     this.eventSub = new TwitchEventSub({
       broadcastStatus: (data) => this.broadcast({ type: "status", ...data }),
       broadcastEvent: (data) => this.broadcast(data),
@@ -440,76 +426,6 @@ class TwitchManager {
     this.eventSub.stop();
     await deleteFile(twitchAuthFileUrl);
     this.broadcast({ type: "status", status: "logged_out" });
-  }
-
-  startAuth({ clientId, scopes }) {
-    const verifier = base64Url(randomBytes(48));
-    const challenge = sha256Base64Url(verifier);
-    const state = base64Url(randomBytes(18));
-
-    this.pendingStates.set(state, {
-      verifier,
-      clientId,
-      scopes,
-      createdAt: Date.now(),
-    });
-
-    const authorize = new URL("https://id.twitch.tv/oauth2/authorize");
-    authorize.searchParams.set("response_type", "code");
-    authorize.searchParams.set("client_id", clientId);
-    authorize.searchParams.set("redirect_uri", `${oauthBaseUrl}/api/twitch/auth/callback`);
-    authorize.searchParams.set("scope", scopes.join(" "));
-    authorize.searchParams.set("state", state);
-    authorize.searchParams.set("code_challenge", challenge);
-    authorize.searchParams.set("code_challenge_method", "S256");
-
-    return authorize.toString();
-  }
-
-  async finishAuth({ code, state }) {
-    const pending = this.pendingStates.get(state);
-    if (!pending) {
-      throw new Error("invalid_state");
-    }
-    this.pendingStates.delete(state);
-
-    const body = new URLSearchParams({
-      client_id: pending.clientId,
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: `${oauthBaseUrl}/api/twitch/auth/callback`,
-      code_verifier: pending.verifier,
-    });
-
-    const res = await fetch("https://id.twitch.tv/oauth2/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`token_exchange_failed:${res.status}:${errText?.slice?.(0, 200) || ""}`);
-    }
-
-    const token = await res.json();
-    const auth = {
-      clientId: pending.clientId,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token || null,
-      tokenType: token.token_type,
-      scope: token.scope || pending.scopes,
-      obtainedAt: Date.now(),
-      expiresAt: Date.now() + (Number(token.expires_in) || 0) * 1000,
-      userId: null,
-      login: null,
-    };
-
-    await writeJsonFile(twitchAuthFileUrl, auth);
-    await this.eventSub.setAuth(auth);
-    await this.eventSub.connect();
-    this.broadcast({ type: "status", status: "auth_ok" });
-    return this.eventSub.getStatus();
   }
 
   async exchangePkce({ clientId, code, codeVerifier, redirectUri }) {
@@ -704,65 +620,13 @@ const server = http.createServer(async (req, res) => {
     return send(res, 200, "ok\n", { "Access-Control-Allow-Origin": "*" });
   }
 
-  if (req.method === "GET" && url.pathname === "/api/twitch/auth/start") {
-    const clientId = url.searchParams.get("clientId");
-    if (!clientId) {
-      return send(res, 400, "Missing required query param: clientId\n", {
-        "Access-Control-Allow-Origin": "*",
-      });
-    }
-
-    const scopes = ["channel:read:redemptions"];
-    const redirectTo = twitch.startAuth({ clientId, scopes });
-    res.writeHead(302, {
-      Location: redirectTo,
-      "Access-Control-Allow-Origin": "*",
-    });
-    return res.end();
-  }
-
-  if (req.method === "GET" && url.pathname === "/api/twitch/auth/callback") {
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    if (!code || !state) {
-      return send(res, 400, "Missing required query params: code, state\n", {
-        "Access-Control-Allow-Origin": "*",
-      });
-    }
-
-    try {
-      await twitch.finishAuth({ code, state });
-      res.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-      });
-      return res.end(`<!doctype html>
-<html>
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Twitch Connected</title></head>
-  <body>
-    <script>
-      try { window.opener && window.opener.postMessage({ type: "twitch-auth", ok: true }, "*"); } catch {}
-      window.close();
-    </script>
-    Connected. You can close this tab.
-  </body>
-</html>`);
-    } catch (err) {
-      res.writeHead(200, {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-      });
-      return res.end(`<!doctype html>
-<html>
-  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Twitch Error</title></head>
-  <body>
-    <pre>${String(err?.message || err)}</pre>
-    <script>
-      try { window.opener && window.opener.postMessage({ type: "twitch-auth", ok: false, error: ${json(String(err?.message || err))} }, "*"); } catch {}
-    </script>
-  </body>
-</html>`);
-    }
+  if (req.method === "GET" && (url.pathname === "/api/twitch/auth/start" || url.pathname === "/api/twitch/auth/callback")) {
+    return send(
+      res,
+      410,
+      "Deprecated: use the HTTPS frontend auth flow at https://localhost:5173/auth/twitch\n",
+      { "Access-Control-Allow-Origin": "*" },
+    );
   }
 
   if (req.method === "GET" && url.pathname === "/api/twitch/sse") {
