@@ -34,6 +34,7 @@ export default class YoutubeProxyService {
           id: data?.id,
           username: data?.username,
           text: data?.text,
+          timestamp: data?.timestamp || null,
         });
 
         if (this.seenMessageIds.size > 2000) {
@@ -55,4 +56,3 @@ export default class YoutubeProxyService {
     this.seenMessageIds.clear();
   }
 }
-

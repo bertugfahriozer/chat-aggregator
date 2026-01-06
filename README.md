@@ -89,11 +89,12 @@ This project can also show Twitch “events” (not chat) like channel point red
    ```
    This runs the server + Vite on HTTPS (Twitch requires HTTPS redirect URLs). You may need to accept the browser’s local certificate warning once.
 2. Create a Twitch Developer app and copy its **Client ID**.
-   - If Twitch requires a **Client Secret** for your app type, you can paste it in Settings during authentication (it’s only used for the token exchange, then discarded from the browser storage).
-   - Scopes used: `channel:read:redemptions` (channel points) and `channel:read:raids` (raids).
+   - If Twitch requires a **Client Secret** for your app type, paste it in Settings during authentication. It is not stored in the browser settings, but the local server may store it in `server/.twitch-auth.json` so it can refresh tokens.
+   - Default OAuth scope: `channel:read:redemptions` (channel points). You can optionally add `channel:read:raids` if Twitch accepts it for your app; raids also show as chat alerts regardless.
 3. Add this redirect URL to the app:
    - `https://localhost:5173/auth/twitch`
 4. In the app Settings, enable **Twitch Events**, paste Client ID, and click **Authenticate**.
+5. If Twitch rejects a scope (example: `invalid scope requested: 'channel:read:raids'`), remove it from **Requested OAuth Scopes** and re-authenticate. (Raids will still show as chat alerts.)
 
 ### Optional Fonts (Pirulen / Vandav)
 
@@ -119,6 +120,7 @@ They are gitignored by default.
 4. **URL Params (optional)**:
    - `?twitch=channel&kick=channel&youtube_vid=VIDEO_ID&theme=dark`
    - Twitch events params (optional): `twitch_events=true&twitch_client=CLIENT_ID&twitch_system=NAME`
+   - Twitch events scopes override (optional): `twitch_scopes=channel:read:redemptions` (optionally add `%20channel:read:raids` if Twitch accepts it)
 
 ## Project Structure
 

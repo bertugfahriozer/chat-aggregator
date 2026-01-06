@@ -107,6 +107,11 @@ export default class TwitchEventProxyService {
       const login = status?.login ? ` as ${status.login}` : "";
       return `Twitch Events connected${login}.`;
     }
+    if (s === "subscription_skipped") {
+      const type = status?.subscriptionType || "unknown";
+      const reason = status?.reason || "skipped";
+      return `Twitch Events: skipping ${type} (${reason}).`;
+    }
     if (s === "subscription_failed") {
       const type = status?.subscriptionType || "unknown";
       return `Twitch Events: failed to subscribe to ${type}.`;
@@ -117,4 +122,3 @@ export default class TwitchEventProxyService {
     return null;
   }
 }
-

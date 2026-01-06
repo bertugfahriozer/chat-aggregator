@@ -91,6 +91,15 @@ class TwitchEventSub {
     this.auth = null;
     this.reconnectTimer = null;
     this.reconnectAttempt = 0;
+    this.shouldReconnect = false;
+    this.lastRefreshFailureAt = 0;
+  }
+
+  disableReconnect() {
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectAttempt = 0;
   }
 
   getStatus() {
@@ -101,6 +110,7 @@ class TwitchEventSub {
       scopes: this.auth?.scope || [],
       expiresAt: this.auth?.expiresAt || null,
       hasAuth: Boolean(this.auth?.accessToken),
+      refreshConfigured: Boolean(this.auth?.refreshToken && this.auth?.clientSecret),
     };
   }
 
@@ -110,11 +120,9 @@ class TwitchEventSub {
   }
 
   stop() {
+    this.disableReconnect();
     this.connected = false;
     this.sessionId = null;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = null;
-    this.reconnectAttempt = 0;
     this.closeWs();
   }
 
@@ -128,6 +136,8 @@ class TwitchEventSub {
   }
 
   scheduleReconnect(reason) {
+    if (!this.shouldReconnect) return;
+    if (!this.auth?.accessToken || !this.auth?.clientId) return;
     if (this.reconnectTimer) return;
     const backoffMs = Math.min(30000, 1000 * 2 ** this.reconnectAttempt);
     this.reconnectAttempt += 1;
@@ -146,11 +156,14 @@ class TwitchEventSub {
   }
 
   async ensureValidToken() {
-    if (!this.auth?.accessToken || !this.auth?.clientId) return;
+    if (!this.auth?.accessToken || !this.auth?.clientId) return false;
 
     const now = Date.now();
     if (this.auth.expiresAt && this.auth.expiresAt - now < 60_000 && this.auth.refreshToken) {
-      await this.refreshToken();
+      const recentlyFailed = this.lastRefreshFailureAt && now - this.lastRefreshFailureAt < 5 * 60_000;
+      if (!recentlyFailed) {
+        await this.refreshToken();
+      }
     }
 
     const validateRes = await fetch("https://id.twitch.tv/oauth2/validate", {
@@ -164,18 +177,25 @@ class TwitchEventSub {
         status: "auth_invalid",
         error: `validate_failed:${validateRes.status}`,
       });
-      return;
+      if (validateRes.status === 401 || validateRes.status === 403) {
+        this.disableReconnect();
+        this.closeWs();
+      }
+      return false;
     }
 
     const validated = await validateRes.json();
+    const expiresIn = Number(validated.expires_in);
     const updated = {
       ...this.auth,
       userId: validated.user_id,
       login: validated.login,
       scope: Array.isArray(validated.scopes) ? validated.scopes : [],
+      expiresAt: Number.isFinite(expiresIn) ? Date.now() + expiresIn * 1000 : this.auth.expiresAt,
     };
     this.auth = updated;
     await this.onAuthUpdate(updated);
+    return true;
   }
 
   async refreshToken() {
@@ -187,6 +207,10 @@ class TwitchEventSub {
       client_id: this.auth.clientId,
     });
 
+    if (this.auth.clientSecret) {
+      body.set("client_secret", this.auth.clientSecret);
+    }
+
     const res = await fetch("https://id.twitch.tv/oauth2/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -194,7 +218,12 @@ class TwitchEventSub {
     });
 
     if (!res.ok) {
-      this.broadcastStatus({ status: "auth_refresh_failed", error: `refresh_failed:${res.status}` });
+      this.lastRefreshFailureAt = Date.now();
+      const errText = await res.text();
+      this.broadcastStatus({
+        status: "auth_refresh_failed",
+        error: `refresh_failed:${res.status}:${errText?.slice?.(0, 250) || ""}`,
+      });
       return;
     }
 
@@ -214,42 +243,50 @@ class TwitchEventSub {
     this.broadcastStatus({ status: "auth_refreshed" });
   }
 
-  async connect() {
+  async connect(wsUrl = "wss://eventsub.wss.twitch.tv/ws") {
+    this.shouldReconnect = true;
     if (!this.auth?.accessToken || !this.auth?.clientId) {
       this.broadcastStatus({ status: "auth_required" });
       return;
     }
 
-    await this.ensureValidToken();
+    const tokenOk = await this.ensureValidToken();
+    if (!tokenOk) return;
     if (!this.auth?.userId) {
       this.broadcastStatus({ status: "auth_required" });
       return;
     }
 
+    this.connected = false;
+    this.sessionId = null;
     this.closeWs();
     this.broadcastStatus({ status: "connecting" });
 
-    const ws = new WebSocket("wss://eventsub.wss.twitch.tv/ws");
+    const ws = new WebSocket(wsUrl);
     this.ws = ws;
 
     ws.addEventListener("open", () => {
+      if (ws !== this.ws) return;
       this.connected = true;
       this.reconnectAttempt = 0;
       this.broadcastStatus({ status: "ws_open" });
     });
 
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (ev) => {
+      if (ws !== this.ws) return;
       this.connected = false;
       this.sessionId = null;
-      this.broadcastStatus({ status: "ws_closed" });
+      this.broadcastStatus({ status: "ws_closed", code: ev?.code, reason: ev?.reason });
       this.scheduleReconnect("ws_closed");
     });
 
     ws.addEventListener("error", (err) => {
+      if (ws !== this.ws) return;
       this.broadcastStatus({ status: "ws_error", error: String(err?.message || err) });
     });
 
     ws.addEventListener("message", (event) => {
+      if (ws !== this.ws) return;
       try {
         const payload = JSON.parse(String(event.data || "{}"));
         this.handleWsMessage(payload).catch((err) => {
@@ -272,6 +309,18 @@ class TwitchEventSub {
     }
 
     if (messageType === "session_keepalive") return;
+
+    if (messageType === "session_reconnect") {
+      const reconnectUrl = message?.payload?.session?.reconnect_url || null;
+      this.broadcastStatus({ status: "session_reconnect" });
+      if (reconnectUrl) {
+        this.connect(reconnectUrl).catch((err) => {
+          this.broadcastStatus({ status: "error", error: String(err?.message || err) });
+          this.scheduleReconnect("session_reconnect_failed");
+        });
+      }
+      return;
+    }
 
     if (messageType === "notification") {
       const messageId = message?.metadata?.message_id || null;
@@ -305,23 +354,43 @@ class TwitchEventSub {
     const broadcasterUserId = this.auth?.userId;
     if (!broadcasterUserId) return;
 
-    const subscriptions = [
-      {
+    const hasScope = (scope) => (this.auth?.scope || []).includes(scope);
+
+    const subscriptions = [];
+    if (hasScope("channel:read:redemptions")) {
+      subscriptions.push({
         type: "channel.channel_points_custom_reward_redemption.add",
         version: "1",
         condition: { broadcaster_user_id: broadcasterUserId },
-      },
-      {
-        type: "channel.raid",
-        version: "1",
-        condition: { to_broadcaster_user_id: broadcasterUserId },
-      },
-      {
-        type: "channel.raid",
-        version: "1",
-        condition: { from_broadcaster_user_id: broadcasterUserId },
-      },
-    ];
+      });
+    } else {
+      this.broadcastStatus({
+        status: "subscription_skipped",
+        subscriptionType: "channel.channel_points_custom_reward_redemption.add",
+        reason: "missing_scope:channel:read:redemptions",
+      });
+    }
+
+    if (hasScope("channel:read:raids")) {
+      subscriptions.push(
+        {
+          type: "channel.raid",
+          version: "1",
+          condition: { to_broadcaster_user_id: broadcasterUserId },
+        },
+        {
+          type: "channel.raid",
+          version: "1",
+          condition: { from_broadcaster_user_id: broadcasterUserId },
+        }
+      );
+    } else {
+      this.broadcastStatus({
+        status: "subscription_skipped",
+        subscriptionType: "channel.raid",
+        reason: "missing_scope:channel:read:raids",
+      });
+    }
 
     for (const sub of subscriptions) {
       await this.createSubscription(sub).catch((err) => {
@@ -335,7 +404,8 @@ class TwitchEventSub {
   }
 
   async createSubscription({ type, version, condition }) {
-    await this.ensureValidToken();
+    const ok = await this.ensureValidToken();
+    if (!ok) return;
 
     const res = await fetch("https://api.twitch.tv/helix/eventsub/subscriptions", {
       method: "POST",
@@ -468,6 +538,7 @@ class TwitchManager {
     const token = await res.json();
     const auth = {
       clientId,
+      clientSecret: clientSecret || null,
       accessToken: token.access_token,
       refreshToken: token.refresh_token || null,
       tokenType: token.token_type,
@@ -569,6 +640,45 @@ function getRoom(liveId) {
 const twitch = new TwitchManager();
 await twitch.load();
 
+// Viewer count fetching functions
+async function fetchTwitchViewers(channel) {
+  const auth = twitch.eventSub?.auth;
+  if (!auth?.accessToken || !auth?.clientId) {
+    return null;
+  }
+
+  try {
+    const res = await fetch(
+      `https://api.twitch.tv/helix/streams?user_login=${encodeURIComponent(channel)}`,
+      {
+        headers: {
+          "Client-Id": auth.clientId,
+          Authorization: `Bearer ${auth.accessToken}`,
+        },
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const stream = data?.data?.[0];
+    return stream?.viewer_count ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchKickViewers(channel) {
+  try {
+    const res = await fetch(`https://kick.com/api/v2/channels/${encodeURIComponent(channel)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    // Kick returns livestream info with viewer count when live
+    const viewers = data?.livestream?.viewer_count;
+    return viewers !== undefined ? Number(viewers) : null;
+  } catch {
+    return null;
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
 
@@ -591,6 +701,25 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, twitch.getStatus(), {
       "Access-Control-Allow-Origin": "*",
     });
+  }
+
+  // Viewer count endpoints
+  if (req.method === "GET" && url.pathname.startsWith("/api/viewers/twitch/")) {
+    const channel = url.pathname.split("/api/viewers/twitch/")[1];
+    if (!channel) {
+      return sendJson(res, 400, { error: "Missing channel" }, { "Access-Control-Allow-Origin": "*" });
+    }
+    const viewers = await fetchTwitchViewers(decodeURIComponent(channel));
+    return sendJson(res, 200, { viewers }, { "Access-Control-Allow-Origin": "*" });
+  }
+
+  if (req.method === "GET" && url.pathname.startsWith("/api/viewers/kick/")) {
+    const channel = url.pathname.split("/api/viewers/kick/")[1];
+    if (!channel) {
+      return sendJson(res, 400, { error: "Missing channel" }, { "Access-Control-Allow-Origin": "*" });
+    }
+    const viewers = await fetchKickViewers(decodeURIComponent(channel));
+    return sendJson(res, 200, { viewers }, { "Access-Control-Allow-Origin": "*" });
   }
 
   if (req.method === "POST" && url.pathname === "/api/twitch/pkce/exchange") {

@@ -21,7 +21,7 @@
         </label>
       </div>
       <p class="hint subtle">
-        Captures channel points + raids via Twitch EventSub (requires one-time login).
+        Captures channel points via Twitch EventSub (requires one-time login). Raid alerts also appear via Twitch chat.
       </p>
       <div v-if="twitchEventsEnabled" class="events-grid">
         <div class="input-group">
@@ -35,6 +35,13 @@
         <div class="input-group">
           <label>Twitch Client Secret (if required)</label>
           <input v-model="twitchClientSecret" type="password" placeholder="Optional (kept only for this auth)" />
+        </div>
+        <div class="input-group">
+          <label>Requested OAuth Scopes</label>
+          <input
+            v-model="twitchRequestedScopes"
+            placeholder="channel:read:redemptions"
+          />
         </div>
         <div class="events-actions">
           <button class="secondary" @click="startTwitchAuth" :disabled="!twitchClientId.trim()">
@@ -100,6 +107,7 @@ export default {
         twitchEventsEnabled: false,
         twitchClientId: '',
         twitchSystemName: 'CHAOSFOUNDRY // SYS',
+        twitchRequestedScopes: 'channel:read:redemptions',
       }),
     },
   },
@@ -111,6 +119,8 @@ export default {
       twitchEventsEnabled: Boolean(this.initialSettings.twitchEventsEnabled),
       twitchClientId: this.initialSettings.twitchClientId || '',
       twitchSystemName: this.initialSettings.twitchSystemName || 'CHAOSFOUNDRY // SYS',
+      twitchRequestedScopes:
+        this.initialSettings.twitchRequestedScopes || 'channel:read:redemptions',
       twitchStatus: null,
       twitchAuthWarning: '',
       twitchClientSecret: '',
@@ -146,6 +156,8 @@ export default {
         this.twitchEventsEnabled = Boolean(newSettings.twitchEventsEnabled);
         this.twitchClientId = newSettings.twitchClientId || '';
         this.twitchSystemName = newSettings.twitchSystemName || 'CHAOSFOUNDRY // SYS';
+        this.twitchRequestedScopes =
+          newSettings.twitchRequestedScopes || 'channel:read:redemptions';
       },
       deep: true,
     },
@@ -159,6 +171,7 @@ export default {
         twitchEventsEnabled: this.twitchEventsEnabled,
         twitchClientId: this.twitchClientId,
         twitchSystemName: this.twitchSystemName,
+        twitchRequestedScopes: this.twitchRequestedScopes,
       };
       this.$emit('update-settings', settings);
     },
@@ -197,7 +210,8 @@ export default {
       }
 
       if ((this.twitchClientSecret || '').trim()) {
-        this.twitchAuthWarning = 'Client Secret is only used locally for the token exchange; it is not saved in Settings.';
+        this.twitchAuthWarning =
+          'Client Secret is only used locally (sent to your local server) and is not saved in Settings (the local server may keep it to refresh tokens).';
       }
 
       const state = this.randomBase64Url(18);
@@ -216,7 +230,8 @@ export default {
         })
       );
 
-      const scopes = ['channel:read:redemptions', 'channel:read:raids'];
+      const scopesRaw = (this.twitchRequestedScopes || '').trim();
+      const scopes = scopesRaw ? scopesRaw.split(/\s+/g).filter(Boolean) : ['channel:read:redemptions'];
       const authorize = new URL('https://id.twitch.tv/oauth2/authorize');
       authorize.searchParams.set('response_type', 'code');
       authorize.searchParams.set('client_id', clientId);

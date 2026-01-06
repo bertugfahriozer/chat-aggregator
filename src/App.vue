@@ -13,6 +13,7 @@
         <i class="ri-chat-heart-fill"></i>
         <h1>Chat Aggregator</h1>
       </div>
+      <ViewerCount :viewer-counts="viewerCounts" />
       <div class="header-right">
         <button @click="showSettings = true" class="settings-toggle">
           <i class="ri-settings-3-fill"></i>
@@ -54,6 +55,7 @@
 import { mapState } from 'vuex';
 import ChatDisplay from './components/ChatDisplay.vue';
 import Settings from './components/Settings.vue';
+import ViewerCount from './components/ViewerCount.vue';
 
 const SETTINGS_STORAGE_KEY = 'chat-aggregator:settings';
 const THEME_STORAGE_KEY = 'chat-aggregator:theme';
@@ -61,7 +63,7 @@ const TWITCH_OAUTH_STORAGE_KEY = 'chat-aggregator:twitch-oauth';
 
 export default {
   name: 'App',
-  components: { ChatDisplay, Settings },
+  components: { ChatDisplay, Settings, ViewerCount },
   data() {
     return {
       isDarkTheme: false,
@@ -76,11 +78,12 @@ export default {
         twitchEventsEnabled: false,
         twitchClientId: '',
         twitchSystemName: 'CHAOSFOUNDRY // SYS',
+        twitchRequestedScopes: 'channel:read:redemptions',
       },
     };
   },
   computed: {
-    ...mapState(['messages']),
+    ...mapState(['messages', 'viewerCounts']),
   },
   watch: {
     messages: {
@@ -104,7 +107,12 @@ export default {
       const errorDescription = params.get('error_description');
 
       if (error) {
-        this.authError = `${error}${errorDescription ? `: ${errorDescription}` : ''}`;
+        const base = `${error}${errorDescription ? `: ${errorDescription}` : ''}`;
+        if (error === 'invalid_scope' || (errorDescription || '').toLowerCase().includes('invalid scope')) {
+          this.authError = `${base}\n\nFix: remove the invalid scope from Settings → Twitch Events → Requested OAuth Scopes, then Authenticate again.`;
+        } else {
+          this.authError = base;
+        }
         try {
           window.opener && window.opener.postMessage({ type: 'twitch-auth', ok: false, error: this.authError }, '*');
         } catch {
@@ -187,6 +195,7 @@ export default {
           twitchEventsEnabled: Boolean(parsed.twitchEventsEnabled),
           twitchClientId: parsed.twitchClientId || '',
           twitchSystemName: parsed.twitchSystemName || 'CHAOSFOUNDRY // SYS',
+          twitchRequestedScopes: parsed.twitchRequestedScopes || 'channel:read:redemptions',
         };
       } catch {
         return null;
@@ -207,6 +216,8 @@ export default {
         twitchEventsEnabled: Boolean(settings.twitchEventsEnabled),
         twitchClientId: settings.twitchClientId?.trim?.() || '',
         twitchSystemName: settings.twitchSystemName?.trim?.() || 'CHAOSFOUNDRY // SYS',
+        twitchRequestedScopes:
+          settings.twitchRequestedScopes?.trim?.() || 'channel:read:redemptions',
       };
       this.initialSettings = normalized;
       this.saveSettingsToStorage(normalized);
@@ -238,6 +249,7 @@ export default {
         twitchEventsEnabled: false,
         twitchClientId: '',
         twitchSystemName: 'CHAOSFOUNDRY // SYS',
+        twitchRequestedScopes: 'channel:read:redemptions',
       };
       this.initialSettings = empty;
       this.updateSettings(empty);
@@ -262,6 +274,7 @@ export default {
         twitchEventsEnabled: params.get('twitch_events') === '1' || params.get('twitch_events') === 'true',
         twitchClientId: params.get('twitch_client') || '',
         twitchSystemName: params.get('twitch_system') || '',
+        twitchRequestedScopes: params.get('twitch_scopes') || '',
         theme: params.get('theme') || '',
       };
     },
@@ -274,20 +287,24 @@ export default {
 
     const queryParams = this.parseQueryParams();
     const saved = this.loadSavedSettings();
-    const merged = {
-      twitchChannel: queryParams.twitchChannel || saved?.twitchChannel || '',
-      youtubeLiveId: queryParams.youtubeLiveId || saved?.youtubeLiveId || '',
-      kickChannel: queryParams.kickChannel || saved?.kickChannel || '',
-      twitchEventsEnabled:
-        queryParams.twitchEventsEnabled ||
-        Boolean(saved?.twitchEventsEnabled) ||
-        false,
-      twitchClientId: queryParams.twitchClientId || saved?.twitchClientId || '',
-      twitchSystemName:
-        queryParams.twitchSystemName ||
-        saved?.twitchSystemName ||
-        'CHAOSFOUNDRY // SYS',
-    };
+      const merged = {
+        twitchChannel: queryParams.twitchChannel || saved?.twitchChannel || '',
+        youtubeLiveId: queryParams.youtubeLiveId || saved?.youtubeLiveId || '',
+        kickChannel: queryParams.kickChannel || saved?.kickChannel || '',
+        twitchEventsEnabled:
+          queryParams.twitchEventsEnabled ||
+          Boolean(saved?.twitchEventsEnabled) ||
+          false,
+        twitchClientId: queryParams.twitchClientId || saved?.twitchClientId || '',
+        twitchSystemName:
+          queryParams.twitchSystemName ||
+          saved?.twitchSystemName ||
+          'CHAOSFOUNDRY // SYS',
+        twitchRequestedScopes:
+          queryParams.twitchRequestedScopes ||
+          saved?.twitchRequestedScopes ||
+          'channel:read:redemptions',
+      };
     this.initialSettings = merged;
 
     // Set theme from query parameter or system preference
