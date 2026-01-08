@@ -5,6 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:https": "HTTPS=1 vite",
+    "server": "node server/index.js",
+    "dev:all": "concurrently -k \"npm run server\" \"npm run dev\"",
+    "dev:all:https": "concurrently -k \"npm run server\" \"npm run dev:https\"",
+    "dev:yt": "concurrently -k \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -15,10 +20,13 @@
     "vue": "^3.5.18",
     "vuex": "^4.1.0",
     "uuid": "^10.0.0",
-    "remixicon": "^4.4.0"
+    "remixicon": "^4.4.0",
+    "youtube-chat": "^2.2.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.1.0",
     "@vitejs/plugin-vue": "^6.0.1",
+    "concurrently": "^9.2.1",
     "vite": "^7.1.2"
   }
 }

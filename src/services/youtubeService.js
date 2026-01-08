@@ -36,6 +36,7 @@ export default class YoutubeService {
             username: item.authorDetails.displayName,
             text: item.snippet.displayMessage,
             id: item.id, // Use YouTube's message ID for deduplication
+            timestamp: item.snippet?.publishedAt || null,
           });
         }
       });
