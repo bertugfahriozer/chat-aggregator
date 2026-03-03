@@ -5,41 +5,17 @@ import KickService from "../services/kickService";
 import TwitchService from "../services/twitchService";
 import YoutubeService from "../services/youtubeService";
 
-async function getLiveChatId(videoId, apiKey) {
-  try {
-    const response = await axios.get(
-      `https://www.googleapis.com/youtube/v3/videos`,
-      {
-        params: {
-          id: videoId,
-          part: "liveStreamingDetails",
-          key: apiKey,
-        },
-      }
-    );
-    return (
-      response.data.items[0]?.liveStreamingDetails?.activeLiveChatId || null
-    );
-  } catch (error) {
-    console.error(
-      "Error fetching liveChatId:",
-      error.response?.data || error.message
-    );
-    return null;
-  }
-}
-
 async function getKickChannelId(channelName) {
   try {
     const response = await axios.get(
-      `https://kick.com/api/v2/channels/${channelName}`
+      `https://kick.com/api/v2/channels/${channelName}`,
     );
     const data = await response.data;
     return data.id;
   } catch (error) {
     console.error(
       "Error fetching Kick channel ID:",
-      error.response?.data || error.message
+      error.response?.data || error.message,
     );
     return null;
   }
@@ -92,21 +68,15 @@ export default createStore({
 
       const twitch = settings.twitchChannel
         ? new TwitchService(settings.twitchChannel, (message) =>
-            commit("addMessage", { ...message, platform: "twitch" })
+            commit("addMessage", { ...message, platform: "twitch" }),
           )
         : null;
 
       let youtube = null;
       if (settings.youtubeLiveId) {
-        const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
-        const liveChatId = await getLiveChatId(settings.youtubeLiveId, apiKey);
-        if (liveChatId) {
-          youtube = new YoutubeService(liveChatId, (message) =>
-            commit("addMessage", { ...message, platform: "youtube" })
-          );
-        } else {
-          console.error("Failed to retrieve valid liveChatId.");
-        }
+        youtube = new YoutubeService(settings.youtubeLiveId, (message) =>
+          commit("addMessage", { ...message, platform: "youtube" }),
+        );
       }
 
       let kick = null;
@@ -114,7 +84,7 @@ export default createStore({
         const channelId = await getKickChannelId(settings.kickChannel);
         if (channelId) {
           kick = new KickService(channelId, (message) =>
-            commit("addMessage", { ...message, platform: "kick" })
+            commit("addMessage", { ...message, platform: "kick" }),
           );
         } else {
           console.error("Failed to retrieve Kick channel ID.");

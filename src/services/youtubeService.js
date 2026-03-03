@@ -1,84 +1,65 @@
-import axios from "axios";
-
 export default class YoutubeService {
-  constructor(liveChatId, onMessage) {
-    this.liveChatId = liveChatId;
+  constructor(channelIdOrHandle, onMessage) {
+    this.channelId = channelIdOrHandle;
     this.onMessage = onMessage;
-    this.apiKey = import.meta.env.VITE_YOUTUBE_API_KEY;
-    this.pollingInterval = null;
-    this.nextPageToken = "";
-    this.seenMessageIds = new Set(); // Track seen message IDs for deduplication
-    this.pollingIntervalMs = 1000; // Default polling interval (5 seconds)
-  }
-
-  async poll() {
-    try {
-      const response = await axios.get(
-        `https://www.googleapis.com/youtube/v3/liveChat/messages`,
-        {
-          params: {
-            liveChatId: this.liveChatId,
-            part: "id,snippet,authorDetails",
-            key: this.apiKey,
-            pageToken: this.nextPageToken || undefined,
-          },
-        }
-      );
-      const items = response.data.items || [];
-      this.nextPageToken = response.data.nextPageToken;
-      // Update polling interval based on API response
-      this.pollingIntervalMs = response.data.pollingIntervalMillis || 5000;
-
-      items.forEach((item) => {
-        if (!this.seenMessageIds.has(item.id)) {
-          this.seenMessageIds.add(item.id);
-          this.onMessage({
-            username: item.authorDetails.displayName,
-            text: item.snippet.displayMessage,
-            id: item.id, // Use YouTube's message ID for deduplication
-          });
-        }
-      });
-
-      // Clear old message IDs to prevent memory growth (keep last 1000)
-      if (this.seenMessageIds.size > 1000) {
-        const ids = Array.from(this.seenMessageIds);
-        this.seenMessageIds = new Set(ids.slice(-1000));
-      }
-
-      // Schedule next poll
-      this.scheduleNextPoll();
-    } catch (error) {
-      console.error(
-        "YouTube API Polling Error:",
-        error.response?.data || error.message
-      );
-      // Retry after a delay on error
-      this.scheduleNextPoll();
-    }
-  }
-
-  scheduleNextPoll() {
-    if (this.pollingInterval) {
-      clearTimeout(this.pollingInterval);
-    }
-    this.pollingInterval = setTimeout(
-      () => this.poll(),
-      this.pollingIntervalMs
-    );
+    this.ws = null;
+    this.isStopped = false;
   }
 
   start() {
-    if (!this.pollingInterval) {
-      this.poll(); // Start polling immediately
+    this.isStopped = false;
+    if (!this.channelId) {
+      console.warn("YoutubeService: No channel ID or handle provided.");
+      return;
     }
+
+    this.connect();
+  }
+
+  connect() {
+    if (this.isStopped) return;
+
+    this.ws = new WebSocket("ws://localhost:3101");
+
+    this.ws.onopen = () => {
+      console.log(
+        "[YoutubeService] Connected to local proxy for:",
+        this.channelId,
+      );
+      this.ws.send(
+        JSON.stringify({ type: "START", channelId: this.channelId }),
+      );
+    };
+
+    this.ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "CHAT" && payload.data) {
+          this.onMessage(payload.data);
+        }
+      } catch (err) {
+        console.error("[YoutubeService] Proxy Parse Error:", err);
+      }
+    };
+
+    this.ws.onerror = (err) => {
+      console.error("[YoutubeService] WebSocket Proxy Error.", err);
+    };
+
+    this.ws.onclose = () => {
+      console.log("[YoutubeService] Proxy connection closed.");
+      if (!this.isStopped) {
+        setTimeout(() => this.connect(), 5000); // Reconnect loop
+      }
+    };
   }
 
   stop() {
-    if (this.pollingInterval) {
-      clearTimeout(this.pollingInterval);
-      this.pollingInterval = null;
+    this.isStopped = true;
+    if (this.ws) {
+      this.ws.send(JSON.stringify({ type: "STOP" }));
+      this.ws.close();
+      this.ws = null;
     }
-    this.seenMessageIds.clear();
   }
 }
